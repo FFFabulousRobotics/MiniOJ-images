@@ -6,7 +6,7 @@ on:
       image:
         description: Versioned judge image to pull
         type: string
-        default: ghcr.io/fffabulousrobotics/minioj-java21:1.1.0
+        default: ghcr.io/fffabulousrobotics/minioj-java21:1.1.1
       config-repository:
         description: Configuration repository name under the caller's owner
         type: string
