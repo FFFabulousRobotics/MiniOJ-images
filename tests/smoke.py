@@ -139,7 +139,9 @@ tasks.withType(JavaCompile).configureEach {
 
         body = judge()
         assert "BUILD SUCCESSFUL" in body, body
-        assert body.count("Passed!") == 2 and "Failed..." not in body, body
+        assert all(
+            f"#### Case {i} - Passed\n\n" in body for i in range(2)
+        ), body
         jar = project / "build/libs/solution.jar"
         assert jar.is_file() and jar.stat().st_uid == os.getuid()
         assert output.stat().st_uid == os.getuid()
@@ -150,8 +152,8 @@ tasks.withType(JavaCompile).configureEach {
 
         source.write_text("public class Main { broken }\n")
         body = judge()
-        assert (
-            "BUILD FAILED" in body and "Failed..." in body and "Passed!" not in body
+        assert "BUILD FAILED" in body and all(
+            f"#### Case {i} - Failed\n\n" in body for i in range(2)
         ), body
         assert not jar.exists(), "A failed build retained the previously successful JAR"
         print(
@@ -163,8 +165,10 @@ tasks.withType(JavaCompile).configureEach {
             "public class Main { public static void main(String[] args) { while(true) {} } }\n"
         )
         body = judge()
-        assert "BUILD SUCCESSFUL" in body and body.count("Status: 124") == 2, body
-        assert "Passed!" not in body
+        assert "BUILD SUCCESSFUL" in body and body.count("Exit status: `124`") == 2, body
+        assert all(
+            f"#### Case {i} - Failed\n\n" in body for i in range(2)
+        ), body
         print("Nonterminating JARs are stopped by the configured timeout.", flush=True)
 
 
