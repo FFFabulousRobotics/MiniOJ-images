@@ -7,7 +7,7 @@ RUN apt-get update \
         python3 python3-venv ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-ARG MINIOJ_VERSION=0.2.0
+ARG MINIOJ_VERSION=0.3.0
 RUN python3 -m venv /opt/minioj \
     && /opt/minioj/bin/python -m pip install --no-cache-dir "minioj==${MINIOJ_VERSION}"
 

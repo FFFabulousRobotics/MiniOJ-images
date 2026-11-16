@@ -10,7 +10,7 @@ and GitHub credentials are supplied by the calling workflow.
 | --- | --- |
 | JDK | 21, provided by the Gradle base image |
 | Gradle | 9.1.0 |
-| MiniOJ | 0.2.0, installed from PyPI |
+| MiniOJ | 0.3.0, installed from PyPI |
 | Published image | `ghcr.io/fffabulousrobotics/minioj-java21:1.0.0` |
 
 The published name above is the first release target. It becomes available after

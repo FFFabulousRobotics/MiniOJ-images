@@ -23,7 +23,7 @@ def main():
     assert 'version "21' in versions.stderr
     # Use the interpreter in MiniOJ's venv for distribution metadata.
     # python3 is resolved through /opt/minioj/bin by the image PATH.
-    assert 'MiniOJ 0.2.0' in versions.stdout
+    assert 'MiniOJ 0.3.0' in versions.stdout
 
     with tempfile.TemporaryDirectory(prefix='minioj-image-') as temporary:
         root = Path(temporary)
