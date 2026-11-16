@@ -1,0 +1,152 @@
+name: Reusable MiniOJ judging
+
+on:
+  workflow_call:
+    inputs:
+      image:
+        description: Versioned judge image to pull
+        type: string
+        default: ghcr.io/fffabulousrobotics/minioj-java21:1.0.0
+      config-repository:
+        description: Configuration repository name under the caller's owner
+        type: string
+        default: MiniOJ-config
+    secrets:
+      MINIOJ_CLIENT_ID:
+        required: true
+      MINIOJ_PRIVATE_KEY:
+        required: true
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  judge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      MINIOJ_IMAGE: ${{ inputs.image }}
+    steps:
+      - name: Generate checkout token
+        id: token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
+        with:
+          client-id: ${{ secrets.MINIOJ_CLIENT_ID }}
+          private-key: ${{ secrets.MINIOJ_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            ${{ github.event.repository.name }}
+            ${{ inputs.config-repository }}
+      - name: Check out trusted tools from the default branch
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.event.repository.default_branch }}
+          path: infrastructure
+          persist-credentials: false
+      - name: Check out PR submission
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ github.repository }}
+          ref: refs/pull/${{ github.event.issue.number }}/head
+          path: submission
+          persist-credentials: false
+      - name: Assemble writable grading project
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil
+          trusted = Path('infrastructure')
+          submission = Path('submission').resolve()
+          work = Path('judge-work')
+          shutil.copytree(trusted, work, ignore=shutil.ignore_patterns(
+              '.git', '.gradle', '.build', 'build', '*.class', '__pycache__'))
+          for destination in work.glob('w*/ex*/Main.java'):
+              relative = destination.relative_to(work)
+              source = submission / relative
+              if not source.exists():
+                  destination.unlink()
+                  continue
+              if source.is_symlink() or not source.resolve().is_relative_to(submission):
+                  raise ValueError(f'{relative} must be a regular file inside the submission')
+              if len(source.read_text(encoding='utf-8')) > 30000:
+                  raise ValueError(f'{relative} exceeds the 30,000 character source limit')
+              shutil.copyfile(source, destination)
+          PY
+      - name: Select GitHub Gradle wrapper settings
+        working-directory: judge-work/gradle/wrapper
+        run: |
+          mv gradle-wrapper.properties gradle-wrapper.local.properties
+          mv gradle-wrapper.github.properties gradle-wrapper.properties
+      - name: Check out trusted MiniOJ configuration
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ github.repository_owner }}/${{ inputs.config-repository }}
+          path: config
+          token: ${{ steps.token.outputs.token }}
+          persist-credentials: false
+      - name: Log in to GHCR
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: Pull prebuilt Java 21 judge image
+        run: docker pull "$MINIOJ_IMAGE"
+      - name: Judge without network or credentials
+        env:
+          COMMENT: ${{ github.event.comment.body }}
+        run: |
+          mkdir -p judge-output
+          : > judge-output/feedback.md
+          git -C submission rev-parse HEAD > judge-output/revision.txt
+          docker run --rm --network none --cap-drop ALL \
+            --security-opt no-new-privileges --memory 1g --cpus 2 --pids-limit 256 \
+            --user "$(id -u):$(id -g)" --read-only --tmpfs /tmp:rw,exec,nosuid,nodev,size=512m \
+            --ulimit fsize=268435456:268435456 \
+            --mount "type=bind,src=$GITHUB_WORKSPACE/judge-work,dst=/workspace" \
+            --mount "type=bind,src=$GITHUB_WORKSPACE/config,dst=/config,readonly" \
+            --mount "type=bind,src=$GITHUB_WORKSPACE/judge-output/feedback.md,dst=/feedback.md" \
+            --workdir /workspace "$MINIOJ_IMAGE" --config /config --comment "$COMMENT" \
+            --output /feedback.md || test -s judge-output/feedback.md
+          cat judge-output/feedback.md
+      - name: Save feedback
+        uses: actions/upload-artifact@v4
+        with:
+          name: minioj-feedback
+          path: judge-output/
+          retention-days: 7
+
+  report:
+    needs: judge
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Download feedback
+        uses: actions/download-artifact@v4
+        with:
+          name: minioj-feedback
+          path: feedback
+      - name: Generate comment token
+        id: token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
+        with:
+          client-id: ${{ secrets.MINIOJ_CLIENT_ID }}
+          private-key: ${{ secrets.MINIOJ_PRIVATE_KEY }}
+      - name: Prepare GitHub comment
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          feedback = Path('feedback')
+          body = (feedback / 'feedback.md').read_text(encoding='utf-8')
+          revision = (feedback / 'revision.txt').read_text().strip()
+          if len(body) > 58000:
+              body = body[:58000] + '\n\nFeedback truncated; download the full workflow artifact.\n'
+          (feedback / 'comment.md').write_text(
+              f'Judged PR revision `{revision}`.\n\n' + body, encoding='utf-8')
+          PY
+      - name: Post feedback to the triggering PR
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        run: gh pr comment "$PR_NUMBER" --body-file feedback/comment.md

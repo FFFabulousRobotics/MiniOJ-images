@@ -1,0 +1,27 @@
+name: Test images
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  java21:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Validate workflow definitions
+        run: |
+          docker run --rm --network none \
+            --mount "type=bind,src=$PWD,dst=/repo,readonly" --workdir /repo \
+            rhysd/actionlint:1.7.12 -color
+      - name: Build Java 21 image
+        run: docker build -f java21/Dockerfile -t minioj-java21:ci .
+      - name: Test writable workspace and JAR judging
+        run: python3 tests/smoke.py --image minioj-java21:ci

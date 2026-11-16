@@ -1,0 +1,63 @@
+name: Publish images
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Image release version, without v
+        default: '1.0.0'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  java21:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Select image name and version
+        id: image
+        env:
+          REQUESTED_TAG: ${{ inputs.image_tag }}
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="$REQUESTED_TAG"
+          fi
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9][a-zA-Z0-9.-]*)?$ ]] || {
+            echo 'Use a version such as 1.0.0 or 1.0.0-rc.1' >&2
+            exit 1
+          }
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/minioj-java21:$version"
+          echo "name=$image" >> "$GITHUB_OUTPUT"
+      - name: Build Java 21 image
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+        run: |
+          docker build -f java21/Dockerfile -t "$IMAGE" \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" .
+      - name: Test image before publishing
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+        run: python3 tests/smoke.py --image "$IMAGE"
+      - name: Log in to GHCR
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: Publish versioned image
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+        run: |
+          docker push "$IMAGE"
+          printf 'Published %s\n' "$IMAGE" >> "$GITHUB_STEP_SUMMARY"
