@@ -10,12 +10,9 @@ and GitHub credentials are supplied by the calling workflow.
 | --- | --- |
 | JDK | 21, provided by the Gradle base image |
 | Gradle | 9.1.0 |
-| MiniOJ | 0.3.0, installed from PyPI |
-| Published image | `ghcr.io/fffabulousrobotics/minioj-java21:1.0.0` |
+| MiniOJ | latest from PyPI |
 
-The published name above is the first release target. It becomes available after
-the publication workflow runs successfully. Image release numbers are separate
-from MiniOJ's PyPI version.
+This image publishes to `ghcr.io/fffabulousrobotics/minioj-java21`.
 
 The image starts `minioj` directly, with `/workspace` as its working directory.
 With no arguments, it displays CLI help. Gradle is installed on `PATH`, so build
@@ -61,11 +58,6 @@ Optional inputs are `image` (default: the image in the table above) and
 `config-repository` (default: `MiniOJ-config`, a repository name under the caller's
 owner). The GitHub App must have access to the calling repository and that
 configuration repository. Only the two named App secrets are forwarded.
-
-Publish the `v1.0.0` source tag with this workflow before using that reference in
-the caller. A public caller requires this reusable workflow repository to be
-public; for private callers, configure the repository's Actions access policy as
-needed. Workflow access and GHCR package access are separate settings.
 
 ## Build and verify locally
 
@@ -117,19 +109,19 @@ Create `FFFabulousRobotics/MiniOJ-images` on GitHub and push this local reposito
 to it. The `Test images`
 workflow builds and tests changes on `main` and pull requests.
 
-To publish the first image, push a `v1.0.0` tag after committing the files:
+To publish the image, push a `vX.Y.Z` tag after committing the files:
 
 ```sh
-git tag v1.0.0
-git push origin v1.0.0
+git tag vX.Y.Z
+git push origin vX.Y.Z
 ```
 
-Alternatively, run `Publish images` manually with `image_tag` set to `1.0.0`.
+Alternatively, run `Publish images` manually with `image_tag` set to `X.Y.Z`.
 The workflow builds and tests the image before publishing it with the repository's
 `GITHUB_TOKEN` and `packages: write` permission. The image is labeled with the
 source repository and commit.
 
-After the first publication, either make the GHCR package public or grant
+Maintainers should grant
 `FFFabulousRobotics/FTCCodingExercises` read access under the package's
 **Manage Actions access** settings. The consumer workflow logs in with its
 `GITHUB_TOKEN`, which has `packages: read` permission.
@@ -137,5 +129,4 @@ After the first publication, either make the GHCR package public or grant
 When updating tools, change the Dockerfile defaults and smoke-check expectations,
 publish a new image release, then update the reusable workflow's default image
 and the source ref used by callers. A caller can override the image with the
-`image` input. The current consumer expects source tag `v1.0.0` and image release
-`1.0.0`; publish them before enabling that workflow.
+`image` input.
